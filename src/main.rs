@@ -6,6 +6,15 @@ use std::{fs::File, io::Write};
 use calamine::{Reader, open_workbook, Xlsx};
 use chrono::{Utc, Datelike};
 
+struct Row {
+    isin: String,
+    suspension: String,
+    level: String,
+    start_date: String,
+    end_date: String,
+    as_of_date: String
+}
+
 async fn download_esma_file(filename: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     let url = "https://www.esma.europa.eu/sites/default/files/dvc_suspensions.xlsx";
@@ -26,10 +35,10 @@ async fn download_esma_file(filename: &str) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-fn handle_row(isin: &String, suspension: &String, level: &String, start_date: &String, end_date: &String,as_of_date: &String)
+fn handle_row(row: &Row)
 {
     println!("isin='{}' susp='{}' level='{}' start={} end={} as_of={}",
-        isin, suspension, level, start_date, end_date, as_of_date );
+        row.isin, row.suspension, row.level, row.start_date, row.end_date, row.as_of_date);
 }
 
 fn read_spreadsheet(filename: &str) {
@@ -42,13 +51,16 @@ fn read_spreadsheet(filename: &str) {
 
         for row_id in 1..range.get_size().0 {
             // let cell = range.get((0,0)).unwrap();
-            let isin        = range.get((row_id, 0)).unwrap().to_string();
-            let suspension  = range.get((row_id, 1)).unwrap().to_string();
-            let level       = range.get((row_id, 2)).unwrap().to_string();
-            let start_date  = range.get((row_id, 3)).unwrap().to_string();
-            let end_date    = range.get((row_id, 4)).unwrap().to_string();
-            let as_of_date  = range.get((row_id, 5)).unwrap().to_string();
-            handle_row(&isin, &suspension, &level, &start_date, &end_date, &as_of_date);
+            let row = Row {
+                isin        : range.get((row_id, 0)).unwrap().to_string(),
+                suspension  : range.get((row_id, 1)).unwrap().to_string(),
+                level       : range.get((row_id, 2)).unwrap().to_string(),
+                start_date  : range.get((row_id, 3)).unwrap().to_string(),
+                end_date    : range.get((row_id, 4)).unwrap().to_string(),
+                as_of_date  : range.get((row_id, 5)).unwrap().to_string()
+            };
+
+            handle_row(&row);
         }
     }
     else {
