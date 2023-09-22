@@ -10,4 +10,5 @@ authors = ["Fernando G. Testa <fernando.testa@equiduct.com>" ]
 reqwest = { version = "0.11", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 calamine = { version = "0.22" }
-chrono = {}
+chrono = { version = "0.4.30" }
+oracle = { version  = "0.5", features = ["chrono"] }

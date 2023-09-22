@@ -5,6 +5,7 @@
 use std::{fs::File, io::Write};
 use calamine::{Reader, open_workbook, Xlsx};
 use chrono::{Utc, Datelike};
+use oracle::{Connection, Statement};
 
 struct Row {
     isin: String,
@@ -35,13 +36,15 @@ async fn download_esma_file(filename: &str) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-fn handle_row(row: &Row)
+fn handle_row(stm: &mut Statement, row: &Row)
 {
     println!("isin='{}' susp='{}' level='{}' start={} end={} as_of={}",
         row.isin, row.suspension, row.level, row.start_date, row.end_date, row.as_of_date);
+
+    let _ = stm.execute(&[&row.isin, &row.suspension, &row.level, &row.start_date, &row.end_date, &row.as_of_date]);
 }
 
-fn read_spreadsheet(filename: &str) {
+fn read_spreadsheet(stm: &mut Statement, filename: &str) {
 
     let mut workbook: Xlsx<_> = open_workbook(filename).expect("Cannot open file");
 
@@ -60,7 +63,7 @@ fn read_spreadsheet(filename: &str) {
                 as_of_date  : range.get((row_id, 5)).unwrap().to_string()
             };
 
-            handle_row(&row);
+            handle_row(stm, &row);
         }
     }
     else {
@@ -68,15 +71,25 @@ fn read_spreadsheet(filename: &str) {
     }
 }
 
+
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("ESMA File downloader - Equiduct 2023");
 
     let now = Utc::now();
-
     let filename = format!("dvc_suspensions_{}{}{}.xlsx", now.year(), now.month(), now.day());
     download_esma_file(filename.as_str()).await?;
-    read_spreadsheet(filename.as_str());
+
+    let conn = Connection::connect("testaf", "testaf", "//devdb001/mifex3")?;
+    let mut stmt = conn.statement(
+"insert into rd_esma_dvcsuspension(isin, dvcstatus, dvclevel, dvcstartdate, dvcenddate, dvcasofdate, importdate)
+values (:1, :2, :3, :4, :5, :6, trunc(sysdate)) ").build()?;
+
+    read_spreadsheet(&mut stmt, filename.as_str());
+
+    let _ = stmt.close();
+    let _ = conn.commit();
 
     Ok(())
 }
