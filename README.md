@@ -2,8 +2,10 @@
 
 ## Resources
 
-*
-* https://blogs.oracle.com/timesten/post/using-rust-with-oracle-databases
+## Resources
+
+* Handling XML: https://github.com/netvl/xml-rs
+* Oracle: https://blogs.oracle.com/timesten/post/using-rust-with-oracle-databases
 
 
 # Notes
@@ -32,3 +34,4 @@ Example of connection to database for query:
         }
     }
 ```
+

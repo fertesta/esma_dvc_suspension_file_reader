@@ -1,2 +1,3 @@
 #!/bin/bash
 export LD_LIBRARY_PATH="/opt/oracle/instantclient_21_11:${LD_LIBRARY_PATH}"
+export NLS_LANG="AMERICAN_AMERICA.AL32UTF8"

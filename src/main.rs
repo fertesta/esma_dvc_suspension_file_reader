@@ -1,10 +1,6 @@
-/*
-    https://github.com/netvl/xml-rs
- */
-
 use std::{fs::File, io::Write};
-use calamine::{Reader, open_workbook, Xlsx};
-use chrono::{Utc, Datelike};
+use calamine::{Reader, open_workbook, Xlsx, DataType};
+use chrono::{Utc, Datelike, Duration, NaiveDate};
 use oracle::{Connection, Statement};
 
 struct Row {
@@ -15,6 +11,7 @@ struct Row {
     end_date: String,
     as_of_date: String
 }
+
 
 async fn download_esma_file(filename: &str) -> Result<(), Box<dyn std::error::Error>> {
 
@@ -36,12 +33,20 @@ async fn download_esma_file(filename: &str) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-fn handle_row(stm: &mut Statement, row: &Row)
+fn handle_row(stm: &mut Statement, row: &Row) -> Result<(), oracle::Error>
 {
-    println!("isin='{}' susp='{}' level='{}' start={} end={} as_of={}",
+    println!("Inserting: isin='{}' susp='{}' level='{}' start={} end={} as_of={}",
         row.isin, row.suspension, row.level, row.start_date, row.end_date, row.as_of_date);
 
-    let _ = stm.execute(&[&row.isin, &row.suspension, &row.level, &row.start_date, &row.end_date, &row.as_of_date]);
+    return stm.execute(&[&row.isin, &row.suspension, &row.level,
+                       &row.start_date, &row.end_date, &row.as_of_date]);
+}
+
+
+fn to_date_str(dt: f64) -> String
+{
+    let epoch = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
+    (epoch + Duration::days(dt as i64 - 2)).to_string()
 }
 
 fn read_spreadsheet(stm: &mut Statement, filename: &str) {
@@ -52,18 +57,50 @@ fn read_spreadsheet(stm: &mut Statement, filename: &str) {
 
         println!("Total entries: {}", range.get_size().0);
 
+        let mut i = 0;
         for row_id in 1..range.get_size().0 {
-            // let cell = range.get((0,0)).unwrap();
+            // let cell = range.get((0,0)).unwrap().to_owned();
+
+            let isin        = range.get((row_id, 0)).unwrap().to_string();
+            let suspension  = range.get((row_id, 1)).unwrap().to_string();
+            let level       = range.get((row_id, 2)).unwrap().to_string();
+            let DataType::DateTime(start_date_f64)  = range.get((row_id, 3)).unwrap().to_owned()
+                else { panic!("Unexpected data type"); };
+            let DataType::DateTime(end_date_f64)    = range.get((row_id, 4)).unwrap().to_owned()
+                else { panic!("Unexpected data type"); };
+            let DataType::DateTime(as_of_date_f64)  = range.get((row_id, 5)).unwrap().to_owned()
+                else { panic!("Unexpected data type"); };
+
+            let start_date  = to_date_str(start_date_f64);
+            let end_date    = to_date_str(end_date_f64);
+            let as_of_date  = to_date_str(as_of_date_f64);
+
+            // println!("row: {} {} {} {:?} {:?} {:?}", isin, suspension, level,
+            //     to_date_str(start_date), to_date_str(end_date), to_date_str(as_of_date));
+
             let row = Row {
-                isin        : range.get((row_id, 0)).unwrap().to_string(),
-                suspension  : range.get((row_id, 1)).unwrap().to_string(),
-                level       : range.get((row_id, 2)).unwrap().to_string(),
-                start_date  : range.get((row_id, 3)).unwrap().to_string(),
-                end_date    : range.get((row_id, 4)).unwrap().to_string(),
-                as_of_date  : range.get((row_id, 5)).unwrap().to_string()
+                isin        ,
+                suspension  ,
+                level       ,
+                start_date,
+                end_date  ,
+                as_of_date
             };
 
-            handle_row(stm, &row);
+            let rc = handle_row(stm, &row);
+            match rc {
+                Err(e) => {
+                    println!("Failed: {}", e);
+                    return;
+                },
+                _ => {}
+            }
+
+            i = i + 1;
+
+            if i % 100 == 0 {
+                println!("Inserted {} rows", i);
+            }
         }
     }
     else {
@@ -72,19 +109,20 @@ fn read_spreadsheet(stm: &mut Statement, filename: &str) {
 }
 
 
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("ESMA File downloader - Equiduct 2023");
+    std::env::set_var("NLS_LANG", "AMERICAN_AMERICA.AL32UTF8");
 
     let now = Utc::now();
     let filename = format!("dvc_suspensions_{}{}{}.xlsx", now.year(), now.month(), now.day());
-    download_esma_file(filename.as_str()).await?;
+
+    // download_esma_file(filename.as_str()).await?;
 
     let conn = Connection::connect("testaf", "testaf", "//devdb001/mifex3")?;
     let mut stmt = conn.statement(
 "insert into rd_esma_dvcsuspension(isin, dvcstatus, dvclevel, dvcstartdate, dvcenddate, dvcasofdate, importdate)
-values (:1, :2, :3, :4, :5, :6, trunc(sysdate)) ").build()?;
+values (:1, :2, :3, to_date(:4, 'yyyy-mm-dd'), to_date(:5, 'yyyy-mm-dd'), to_date(:6, 'yyyy-mm-dd'), trunc(sysdate)) ").build()?;
 
     read_spreadsheet(&mut stmt, filename.as_str());
 
